@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Ident, Type};
+use syn::{parse_macro_input, Data, DeriveInput, Fields, GenericArgument, Ident, PathArguments, Type};
 
 #[proc_macro_derive(Builder)]
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -44,6 +44,26 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let field_name = &field.ident;
         let field_type = &field.ty;
 
+        if let Type::Path(type_path) = field_type {
+            let option = type_path.path.segments.last().unwrap();
+            if option.ident == "Option" {
+                let PathArguments::AngleBracketed(ref argument) = option.arguments else {
+                    panic!("Expected angle-bracketed arguments for Option.");
+                };
+
+                let GenericArgument::Type(arg_type) = argument.args.first().unwrap().to_owned() else {
+                    panic!("Expected a type argument for Option.");
+                };
+
+                return quote! {
+                    fn #field_name(&mut self, #field_name: #arg_type) -> &mut Self {
+                        self.#field_name = Some(#field_name);
+                        self
+                    }
+                };
+            }
+        }
+
         quote! {
             fn #field_name(&mut self, #field_name: #field_type) -> &mut Self {
                 self.#field_name = Some(#field_name);
@@ -54,6 +74,15 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let build_exprs = fields.named.iter().map(|field| {
         let field_name = &field.ident;
+        let field_type = &field.ty;
+
+        if let Type::Path(type_path) = field_type {
+            if type_path.path.segments.last().unwrap().ident == "Option" {
+                return quote! {
+                    #field_name: self.#field_name.take()
+                };
+            }
+        }
 
         quote! {
             #field_name: self.#field_name.take().ok_or("Missing #field_name")?
