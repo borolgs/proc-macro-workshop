@@ -52,6 +52,14 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     });
 
+    let build_exprs = fields.named.iter().map(|field| {
+        let field_name = &field.ident;
+
+        quote! {
+            #field_name: self.#field_name.take().ok_or("Missing #field_name")?
+        }
+    });
+
     let expanded = quote! {
         // ...
         impl #name {
@@ -70,6 +78,12 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
         impl #builder_name {
             #(#builder_setters)*
+
+            pub fn build(&mut self) -> Result<Command, Box<dyn std::error::Error>> {
+                Ok(#name {
+                    #(#build_exprs,)*
+                })
+            }
         }
     };
 
