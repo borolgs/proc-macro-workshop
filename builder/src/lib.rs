@@ -16,12 +16,18 @@ pub fn derive(input: TokenStream) -> TokenStream {
         panic!("The `Builder` macro requires structs with named fields. Found a struct without named fields.");
     };
 
-    let mut builder_each_setters = Vec::new();
-    let mut builder_each_setter_names = Vec::new();
+    let mut builder_fields = Vec::new();
+    let mut builder_fields_inits = Vec::new();
+    let mut builder_setters = Vec::new();
+    let mut build_exprs = Vec::new();
 
-    let builder_fields = fields.named.iter().map(|field| {
+    let mut builder_each_setters = Vec::new();
+
+    for field in fields.named.iter() {
         let field_name = &field.ident;
         let field_type = &field.ty;
+
+        let mut has_each_attribute = false;
 
         for attr in field.attrs.iter().filter(|attr| attr.path().is_ident("builder")) {
             let expr: Expr = attr.parse_args().unwrap();
@@ -55,13 +61,16 @@ pub fn derive(input: TokenStream) -> TokenStream {
                             panic!("Expected a type argument for Option.");
                         };
 
-                        builder_each_setter_names.push(each_setter_name.to_string());
+                        has_each_attribute = true;
+
+                        let each_setter_name_item =
+                            Ident::new(&format!("{}_item", each_setter_name), each_setter_name.span());
 
                         builder_each_setters.push(quote! {
-                            fn #each_setter_name(&mut self, #each_setter_name: #arg_type) -> &mut Self {
+                            fn #each_setter_name(&mut self, #each_setter_name_item: #arg_type) -> &mut Self {
                                 match &mut self.#field_name {
-                                    Some(#field_name) => #field_name.push(#each_setter_name),
-                                    None => self.#field_name = Some(vec![#each_setter_name]),
+                                    Some(#field_name) => #field_name.push(#each_setter_name_item),
+                                    None => self.#field_name = Some(vec![#each_setter_name_item]),
                                 }
                                 self
                             }
@@ -71,33 +80,22 @@ pub fn derive(input: TokenStream) -> TokenStream {
             }
         }
 
-        if let Type::Path(type_path) = field_type {
-            if type_path.path.segments.last().unwrap().ident == "Option" {
-                return quote! {
-                    #field_name: #field_type
-                };
-            }
-        }
+        builder_fields.push(match field_type {
+            Type::Path(type_path) if type_path.path.segments.last().unwrap().ident == "Option" => quote! {
+                #field_name: #field_type
+            },
+            _ => quote! {
+                #field_name: Option<#field_type>
+            },
+        });
 
-        quote! {
-            #field_name: Option<#field_type>
-        }
-    });
-
-    let builder_fields_inits = fields.named.iter().map(|field| {
-        let field_name = &field.ident;
-        quote! {
+        builder_fields_inits.push(quote! {
             #field_name: None
-        }
-    });
+        });
 
-    let builder_setters = fields.named.iter().map(|field| {
-        let field_name = &field.ident;
-        let field_type = &field.ty;
-
-        if let Type::Path(type_path) = field_type {
-            let option = type_path.path.segments.last().unwrap();
-            if option.ident == "Option" {
+        let setter_tokens = match field_type {
+            Type::Path(type_path) if type_path.path.segments.last().unwrap().ident == "Option" => {
+                let option = type_path.path.segments.last().unwrap();
                 let PathArguments::AngleBracketed(ref argument) = option.arguments else {
                     panic!("Expected angle-bracketed arguments for Option.");
                 };
@@ -106,39 +104,34 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     panic!("Expected a type argument for Option.");
                 };
 
-                return quote! {
+                quote! {
                     fn #field_name(&mut self, #field_name: #arg_type) -> &mut Self {
                         self.#field_name = Some(#field_name);
                         self
                     }
-                };
+                }
             }
+            _ => quote! {
+                fn #field_name(&mut self, #field_name: #field_type) -> &mut Self {
+                    self.#field_name = Some(#field_name);
+                    self
+                }
+            },
+        };
+
+        if !has_each_attribute {
+            builder_setters.push(setter_tokens);
         }
 
-        quote! {
-            fn #field_name(&mut self, #field_name: #field_type) -> &mut Self {
-                self.#field_name = Some(#field_name);
-                self
-            }
-        }
-    });
-
-    let build_exprs = fields.named.iter().map(|field| {
-        let field_name = &field.ident;
-        let field_type = &field.ty;
-
-        if let Type::Path(type_path) = field_type {
-            if type_path.path.segments.last().unwrap().ident == "Option" {
-                return quote! {
-                    #field_name: self.#field_name.take()
-                };
-            }
-        }
-
-        quote! {
-            #field_name: self.#field_name.take().ok_or("Missing #field_name")?
-        }
-    });
+        build_exprs.push(match field_type {
+            Type::Path(type_path) if type_path.path.segments.last().unwrap().ident == "Option" => quote! {
+                #field_name: self.#field_name.take()
+            },
+            _ => quote! {
+                #field_name: self.#field_name.take().ok_or("Missing #field_name")?
+            },
+        });
+    }
 
     let expanded = quote! {
         // ...
