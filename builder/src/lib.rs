@@ -1,6 +1,9 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Expr, Fields, GenericArgument, Ident, Lit, PathArguments, Type};
+use syn::{
+    parse_macro_input, spanned::Spanned, Data, DeriveInput, Error, Expr, Fields, GenericArgument, Ident, Lit,
+    PathArguments, Type,
+};
 
 #[proc_macro_derive(Builder, attributes(builder))]
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -75,6 +78,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
                                 self
                             }
                         });
+                    } else {
+                        return Error::new(left.span(), "expected `builder(each = \"...\")")
+                            .into_compile_error()
+                            .into();
                     }
                 }
             }
