@@ -72,8 +72,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
                         builder_each_setters.push(quote! {
                             fn #each_setter_name(&mut self, #each_setter_name_item: #arg_type) -> &mut Self {
                                 match &mut self.#field_name {
-                                    Some(#field_name) => #field_name.push(#each_setter_name_item),
-                                    None => self.#field_name = Some(vec![#each_setter_name_item]),
+                                    std::option::Option::Some(#field_name) => #field_name.push(#each_setter_name_item),
+                                    None => self.#field_name = std::option::Option::Some(Vec::from([#each_setter_name_item])),
                                 }
                                 self
                             }
@@ -92,7 +92,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 #field_name: #field_type
             },
             _ => quote! {
-                #field_name: Option<#field_type>
+                #field_name: std::option::Option<#field_type>
             },
         });
 
@@ -113,14 +113,14 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
                 quote! {
                     fn #field_name(&mut self, #field_name: #arg_type) -> &mut Self {
-                        self.#field_name = Some(#field_name);
+                        self.#field_name = std::option::Option::Some(#field_name);
                         self
                     }
                 }
             }
             _ => quote! {
                 fn #field_name(&mut self, #field_name: #field_type) -> &mut Self {
-                    self.#field_name = Some(#field_name);
+                    self.#field_name = std::option::Option::Some(#field_name);
                     self
                 }
             },
@@ -172,7 +172,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
             #(#builder_each_setters)*
 
-            pub fn build(&mut self) -> Result<Command, Box<dyn std::error::Error>> {
+            pub fn build(&mut self) -> std::result::Result<Command, std::boxed::Box<dyn std::error::Error>> {
                 Ok(#name {
                     #(#build_exprs,)*
                 })
