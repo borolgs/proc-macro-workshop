@@ -123,14 +123,24 @@ pub fn derive(input: TokenStream) -> TokenStream {
             builder_setters.push(setter_tokens);
         }
 
-        build_exprs.push(match field_type {
+        let build_tokens = match field_type {
             Type::Path(type_path) if type_path.path.segments.last().unwrap().ident == "Option" => quote! {
                 #field_name: self.#field_name.take()
             },
-            _ => quote! {
-                #field_name: self.#field_name.take().ok_or("Missing #field_name")?
-            },
-        });
+            _ => {
+                if has_each_attribute {
+                    quote! {
+                        #field_name: self.#field_name.take().unwrap_or(Vec::new())
+                    }
+                } else {
+                    quote! {
+                        #field_name: self.#field_name.take().ok_or("Missing #field_name")?
+                    }
+                }
+            }
+        };
+
+        build_exprs.push(build_tokens);
     }
 
     let expanded = quote! {
@@ -145,6 +155,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             }
         }
 
+        #[derive(Debug)]
         pub struct #builder_name {
             #(#builder_fields,)*
         }
